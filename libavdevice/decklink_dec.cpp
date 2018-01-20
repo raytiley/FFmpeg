@@ -149,6 +149,30 @@ static void extract_luma_from_v210(uint16_t *dst, const uint8_t *src, int width)
     }
 }
 
+static void unpack_v210(uint16_t *dst, const uint8_t *src, int width)
+{
+    int i;
+    for (i = 0; i < width / 6; i++) {
+        *dst++ =  src[0]       + ((src[1] & 3)  << 8);
+        *dst++ = (src[1] >> 2) + ((src[2] & 15) << 6);
+        *dst++ = (src[2] >> 4) + ((src[3] & 63) << 4);
+
+        *dst++ =  src[4]       + ((src[5] & 3)  << 8);
+        *dst++ = (src[5] >> 2) + ((src[6] & 15) << 6);
+        *dst++ = (src[6] >> 4) + ((src[7] & 63) << 4);
+
+        *dst++ =  src[8]       + ((src[9] & 3)  << 8);
+        *dst++ = (src[9] >> 2) + ((src[10] & 15) << 6);
+        *dst++ = (src[10] >> 4) + ((src[11] & 63) << 4);
+
+        *dst++ =  src[12]       + ((src[13] & 3)  << 8);
+        *dst++ = (src[13] >> 2) + ((src[14] & 15) << 6);
+        *dst++ = (src[14] >> 4) + ((src[15] & 63) << 4);
+
+        src += 16;
+    }
+}
+
 static uint8_t calc_parity_and_line_offset(int line)
 {
     uint8_t ret = (line < 313) << 5;
@@ -752,9 +776,16 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
                     for (i = vanc_line_numbers[idx].vanc_start; i <= vanc_line_numbers[idx].vanc_end; i++) {
                         uint8_t *buf;
                         if (vanc->GetBufferForVerticalBlankingLine(i, (void**)&buf) == S_OK) {
-                            uint16_t luma_vanc[MAX_WIDTH_VANC];
-                            extract_luma_from_v210(luma_vanc, buf, videoFrame->GetWidth());
-                            txt_buf = get_metadata(avctx, luma_vanc, videoFrame->GetWidth(),
+                            uint16_t vanc[MAX_WIDTH_VANC];
+                            size_t vanc_size = videoFrame->GetWidth();
+                            if (ctx->bmd_mode == bmdModeNTSC &&
+                                videoFrame->GetWidth() * 2 <= MAX_WIDTH_VANC) {
+                              vanc_size = vanc_size * 2;
+                              unpack_v210(vanc, buf, videoFrame->GetWidth());
+                            } else {
+                              extract_luma_from_v210(vanc, buf, videoFrame->GetWidth());
+                            }
+                            txt_buf = get_metadata(avctx, vanc, vanc_size,
                                                    txt_buf, sizeof(txt_buf0) - (txt_buf - txt_buf0), &pkt);
                         }
                         if (i == vanc_line_numbers[idx].field0_vanc_end)
